@@ -10,6 +10,7 @@ using Belt_calculation_Tg_bot.Models.Enums;
 using Belt_calculation_Tg_bot.Models.State;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Tg__bot.Helpers;
 
 namespace Belt_calculation_Tg_bot.Handlers
 {
@@ -34,10 +35,15 @@ namespace Belt_calculation_Tg_bot.Handlers
             if (state.State == AuthState.AwaitingLoginUsername)
             {
                 var username = message;
-                if (await _database.AuthenticateUserAsync(username))
+                var (exists, role) = await _database.GetUserByUsernameAsync(username);
+
+                if (exists && role.HasValue)
                 {
                     _session[chatId].Username = username;
-                    await bot.SendMessage(chatId, $"Вход выполнен, {username}", cancellationToken: cancellationToken);
+                    _session[chatId].Role = role.Value;
+                    await bot.SendMessage(chatId, $"Вход выполнен как {username} (роль: {role})", cancellationToken: cancellationToken);
+                    var menu = KeyboardHelper.GetMenuForRole(role.Value);
+                    await bot.SendMessage(chatId, "Меню обновлено", replyMarkup: menu, cancellationToken: cancellationToken);
                 }
                 else
                 {

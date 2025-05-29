@@ -5,8 +5,10 @@ using System.Text;
 using System.Threading.Tasks;
 using Belt_calculation_Tg_bot.Handlers.Base;
 using Belt_calculation_Tg_bot.Models;
+using Belt_calculation_Tg_bot.Models.State;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Tg__bot.Helpers;
 
 namespace Belt_calculation_Tg_bot.Handlers
 {
@@ -30,6 +32,8 @@ namespace Belt_calculation_Tg_bot.Handlers
             {
                 _session.Remove(chatId);
                 await bot.SendMessage(chatId, "Вы вышли из аккаунта.", cancellationToken: cancellationToken);
+                var menu = KeyboardHelper.GetMenuForRole(UserRole.Guest);
+                await bot.SendMessage(chatId, "Меню обновлено", replyMarkup: menu, cancellationToken: cancellationToken);
             }
             else
             {
@@ -41,5 +45,7 @@ namespace Belt_calculation_Tg_bot.Handlers
         {
             throw new NotImplementedException();
         }
+
+        public IEnumerable<UserRole> AllowedRoles => new[] { UserRole.User, UserRole.Admin };
     }
 }

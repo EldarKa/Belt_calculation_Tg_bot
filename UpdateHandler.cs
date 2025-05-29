@@ -33,19 +33,6 @@ namespace Belt_calculation_Tg_bot
         public event MessageHandler? OnHandleUpdateStarted;
         public event MessageHandler? OnHandleUpdateCompleted;
 
-        private readonly ReplyKeyboardMarkup _authMenu = new(new[]
-        {
-            new KeyboardButton[] { "/login", "/register" }
-        })
-        { ResizeKeyboard = true };
-
-        private readonly ReplyKeyboardMarkup _mainMenu = new(new[]
-        {
-            new KeyboardButton[] { "/calculate", "/logout" },
-            new KeyboardButton[] { "/delete_Belt", "/add_Belt" },
-        })
-        { ResizeKeyboard = true };
-
         public UpdateHandler(Database db)
         {
             _database = db;
@@ -74,11 +61,11 @@ namespace Belt_calculation_Tg_bot
                     _session[chatId] = new UserSession();
 
                 var state = _session[chatId].State;
-
+                var role = _session[chatId].Role;
                 var handled = false;
 
                 var availableHandlers = _handlers
-                    .Where(h => h.AllowedRoles.Contains(_session[chatId].Role))
+                    .Where(h => h.AllowedRoles.Contains(role))
                     .ToList();
 
                 foreach (var handler in availableHandlers)
@@ -88,11 +75,6 @@ namespace Belt_calculation_Tg_bot
                         await handler.HandleAsync(botClient, chatId, text, state, cancellationToken);
                         handled = true;
                         break;
-
-                        if (!_session.ContainsKey(chatId))
-                        {
-                            await botClient.SendMessage(chatId, "Пожалуйста, авторизуйтесь", replyMarkup: _authMenu, cancellationToken: cancellationToken);
-                        }
                     }
                 }
 
@@ -103,7 +85,7 @@ namespace Belt_calculation_Tg_bot
                         ? $"Принято сообщение от {userSession.Username}"
                         : "Вы не авторизованы. Введите /login или /register";
 
-                    var menu = isAuth ? _mainMenu : _authMenu;
+                    var menu = KeyboardHelper.GetMenuForRole(role);
 
                     await botClient.SendMessage(chatId: chatId, text: reply, replyMarkup: menu, cancellationToken: cancellationToken);
                 }

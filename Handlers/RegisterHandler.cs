@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -10,6 +11,7 @@ using Belt_calculation_Tg_bot.Models.Enums;
 using Belt_calculation_Tg_bot.Models.State;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Tg__bot.Helpers;
 
 namespace Belt_calculation_Tg_bot.Handlers
 {
@@ -39,9 +41,19 @@ namespace Belt_calculation_Tg_bot.Handlers
                 }
                 else
                 {
-                    await _database.AddUserAsync(chatId, message);
+                    var success = await _database.AddUserAsync(chatId, message);
+
+                    if (!success)
+                    {
+                        await bot.SendMessage(chatId, "Ошибка при регистрации. Повторите попытку позже.", cancellationToken: cancellationToken);
+                        state.State = AuthState.None;
+                        return;
+                    }
                     _session[chatId].Username = message;
+                    _session[chatId].Role = UserRole.User;
                     await bot.SendMessage(chatId, $"Регистрация успешна! Добро пожаловать, {message}", cancellationToken: cancellationToken);
+                    var menu = KeyboardHelper.GetMenuForRole(_session[chatId].Role);
+                    await bot.SendMessage(chatId, "Меню обновлено", replyMarkup: menu, cancellationToken: cancellationToken);
                 }
                 state.State = AuthState.None;
             }

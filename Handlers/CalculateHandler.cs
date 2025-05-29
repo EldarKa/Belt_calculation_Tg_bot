@@ -111,7 +111,6 @@ namespace Belt_calculation_Tg_bot.Handlers
                             $"Номинальная мощность: {Pnom:F2}",
                             cancellationToken: cancellationToken);
 
-                        _session.Remove(chatId);
                         userState.CalculateState = CalculateState.None;
                         userState.SelectedBelt = null;
                     }
