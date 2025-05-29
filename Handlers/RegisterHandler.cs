@@ -6,19 +6,22 @@ using System.Threading.Tasks;
 using Belt_calculation_Tg_bot.Data;
 using Belt_calculation_Tg_bot.Handlers.Base;
 using Belt_calculation_Tg_bot.Models;
+using Belt_calculation_Tg_bot.Models.Enums;
+using Belt_calculation_Tg_bot.Models.State;
 using Telegram.Bot;
+using Telegram.Bot.Types;
 
 namespace Belt_calculation_Tg_bot.Handlers
 {
     public class RegisterHandler : ICommandHandler
     {
         private readonly Database _database;
-        private readonly Dictionary<long, string> _sessionMap;
+        private readonly Dictionary<long, UserSession> _session;
 
-        public RegisterHandler(Database database, Dictionary<long, string> sessionMap)
+        public RegisterHandler(Database database, Dictionary<long, UserSession> sessionMap)
         {
             _database = database;
-            _sessionMap = sessionMap;
+            _session = sessionMap;
         }
 
         public bool CanHandle(UserState state, string message)
@@ -37,7 +40,7 @@ namespace Belt_calculation_Tg_bot.Handlers
                 else
                 {
                     await _database.AddUserAsync(chatId, message);
-                    _sessionMap[chatId] = message;
+                    _session[chatId].Username = message;
                     await bot.SendMessage(chatId, $"Регистрация успешна! Добро пожаловать, {message}", cancellationToken: cancellationToken);
                 }
                 state.State = AuthState.None;
@@ -48,5 +51,12 @@ namespace Belt_calculation_Tg_bot.Handlers
                 await bot.SendMessage(chatId, "Введите логин для регистрации:", cancellationToken: cancellationToken);
             }
         }
+
+        public Task<bool> TryHandleCallbackQueryAsync(ITelegramBotClient bot, CallbackQuery callback, UserState userState, CancellationToken token)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IEnumerable<UserRole> AllowedRoles => new[] { UserRole.Guest };
     }
 }

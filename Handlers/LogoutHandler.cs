@@ -6,16 +6,17 @@ using System.Threading.Tasks;
 using Belt_calculation_Tg_bot.Handlers.Base;
 using Belt_calculation_Tg_bot.Models;
 using Telegram.Bot;
+using Telegram.Bot.Types;
 
 namespace Belt_calculation_Tg_bot.Handlers
 {
     public class LogoutHandler : ICommandHandler
     {
-        private readonly Dictionary<long, string> _sessionMap;
+        private readonly Dictionary<long, UserSession> _session;
 
-        public LogoutHandler(Dictionary<long, string> sessionMap)
+        public LogoutHandler(Dictionary<long, UserSession> session)
         {
-            _sessionMap = sessionMap;
+            _session = session;
         }
 
         public bool CanHandle(UserState state, string message)
@@ -25,15 +26,20 @@ namespace Belt_calculation_Tg_bot.Handlers
 
         public async Task HandleAsync(ITelegramBotClient bot, long chatId, string message, UserState state, CancellationToken cancellationToken)
         {
-            if (_sessionMap.ContainsKey(chatId))
+            if (_session.ContainsKey(chatId))
             {
-                _sessionMap.Remove(chatId);
+                _session.Remove(chatId);
                 await bot.SendMessage(chatId, "Вы вышли из аккаунта.", cancellationToken: cancellationToken);
             }
             else
             {
                 await bot.SendMessage(chatId, "Вы не авторизованы.", cancellationToken: cancellationToken);
             }
+        }
+
+        public Task<bool> TryHandleCallbackQueryAsync(ITelegramBotClient bot, CallbackQuery callback, UserState userState, CancellationToken token)
+        {
+            throw new NotImplementedException();
         }
     }
 }

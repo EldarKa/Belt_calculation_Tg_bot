@@ -5,10 +5,13 @@ using System.Text.Json;
 using Belt_calculation_Tg_bot.Data;
 using Belt_calculation_Tg_bot.Handlers;
 using Belt_calculation_Tg_bot.Handlers.Base;
+using Belt_calculation_Tg_bot.Handlers;
 using Belt_calculation_Tg_bot.Models;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
+using Telegram.Bot.Polling;
+using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -23,23 +26,37 @@ namespace Belt_calculation_Tg_bot
     public class UpdateHandler : IUpdateHandler
     {
         private readonly Database _database;
-        private readonly Dictionary<long, string> _sessionMap = new(); 
-        private readonly Dictionary<long, UserState> _userStates = new(); // telegramId -> state
+        private readonly Dictionary<long, UserSession> _session = new(); 
         private readonly List<ICommandHandler> _handlers;
 
         public delegate void MessageHandler(string message);
         public event MessageHandler? OnHandleUpdateStarted;
         public event MessageHandler? OnHandleUpdateCompleted;
 
+        private readonly ReplyKeyboardMarkup _authMenu = new(new[]
+        {
+            new KeyboardButton[] { "/login", "/register" }
+        })
+        { ResizeKeyboard = true };
+
+        private readonly ReplyKeyboardMarkup _mainMenu = new(new[]
+        {
+            new KeyboardButton[] { "/calculate", "/logout" },
+            new KeyboardButton[] { "/delete_Belt", "/add_Belt" },
+        })
+        { ResizeKeyboard = true };
+
         public UpdateHandler(Database db)
         {
             _database = db;
             _handlers = new()
             {
-                new RegisterHandler(db, _sessionMap),
-                new LoginHandler(db, _sessionMap),
-                new CalculateHandler(db),
-                // Добавишь другие обработчики здесь
+                new RegisterHandler(db, _session),
+                new LoginHandler(db, _session),
+                new CalculateHandler(db, _session),
+                new AddBeltHandler(db),
+                new DeleteBeltHandler(db),
+                new LogoutHandler(_session)
             };
         }
 
@@ -53,27 +70,42 @@ namespace Belt_calculation_Tg_bot
 
                 OnHandleUpdateStarted?.Invoke(text);
 
-                if (!_userStates.ContainsKey(chatId))
-                    _userStates[chatId] = new UserState();
+                if (!_session.ContainsKey(chatId))
+                    _session[chatId] = new UserSession();
 
-                var state = _userStates[chatId];
+                var state = _session[chatId].State;
 
                 var handled = false;
-                foreach (var handler in _handlers)
+
+                var availableHandlers = _handlers
+                    .Where(h => h.AllowedRoles.Contains(_session[chatId].Role))
+                    .ToList();
+
+                foreach (var handler in availableHandlers)
                 {
                     if (handler.CanHandle(state, text))
                     {
                         await handler.HandleAsync(botClient, chatId, text, state, cancellationToken);
                         handled = true;
                         break;
+
+                        if (!_session.ContainsKey(chatId))
+                        {
+                            await botClient.SendMessage(chatId, "Пожалуйста, авторизуйтесь", replyMarkup: _authMenu, cancellationToken: cancellationToken);
+                        }
                     }
                 }
 
                 if (!handled)
                 {
-                    var isAuth = _sessionMap.TryGetValue(chatId, out var username);
-                    var reply = isAuth ? $"Принято сообщение от {username}" : "Вы не авторизованы. Введите /login или /register";
-                    await botClient.SendMessage(chatId: chatId, text: reply, cancellationToken: cancellationToken);
+                    var isAuth = _session.TryGetValue(chatId, out var userSession);
+                    var reply = isAuth && !string.IsNullOrEmpty(userSession?.Username)
+                        ? $"Принято сообщение от {userSession.Username}"
+                        : "Вы не авторизованы. Введите /login или /register";
+
+                    var menu = isAuth ? _mainMenu : _authMenu;
+
+                    await botClient.SendMessage(chatId: chatId, text: reply, replyMarkup: menu, cancellationToken: cancellationToken);
                 }
 
                 OnHandleUpdateCompleted?.Invoke(text);
@@ -84,26 +116,25 @@ namespace Belt_calculation_Tg_bot
                 var chatId = callback.Message!.Chat.Id;
                 var data = callback.Data;
 
-                if (!_userStates.ContainsKey(chatId))
-                    _userStates[chatId] = new UserState();
+                if (!_session.ContainsKey(chatId))
+                    _session[chatId].State = new UserState();
 
-                var state = _userStates[chatId];
+                var state = _session[chatId].State;
 
                 if (data != null && data.StartsWith("belt:"))
                 {
-                    var beltName = data.Substring("belt:".Length);
-                    var handler = _handlers.OfType<CalculateHandler>().FirstOrDefault();
-                    if (handler != null)
+                    var calcHandler = _handlers.OfType<CalculateHandler>().FirstOrDefault();
+                    if (calcHandler != null)
                     {
-                        await handler.HandleBeltSelectionAsync(botClient, chatId, beltName, state, cancellationToken);
-                        await botClient.MakeRequestAsync(
-    new Telegram.Bot.Requests.AnswerCallbackQueryRequest(callback.Id),
-    cancellationToken
-);
+                        await calcHandler.TryHandleCallbackQueryAsync(botClient, callback, state, cancellationToken);
+                        return;
                     }
                 }
+
+                await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
             }
         }
+
 
 
         public Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, HandleErrorSource source, CancellationToken cancellationToken)

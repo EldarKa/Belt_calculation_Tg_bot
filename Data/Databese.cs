@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -33,9 +34,10 @@ namespace Belt_calculation_Tg_bot.Data
             using var conn = new NpgsqlConnection(_connectionString);
             await conn.OpenAsync();
 
-            using var cmd = new NpgsqlCommand("INSERT INTO users (telegram_id, username) VALUES (@id, @username)", conn);
+            using var cmd = new NpgsqlCommand("INSERT INTO users (telegram_id, username, role) VALUES (@id, @username, @role)", conn);
             cmd.Parameters.AddWithValue("id", telegramId);
             cmd.Parameters.AddWithValue("username", username);
+            cmd.Parameters.AddWithValue("role", "User");
 
             try
             {
@@ -115,6 +117,38 @@ namespace Belt_calculation_Tg_bot.Data
             }
 
             return null;
+        }
+
+        public async Task AddBeltAsync(Belt belt)
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var command = new NpgsqlCommand(
+                "INSERT INTO belts (name, weight, k1, k2, k3, k4, l0) VALUES (@name, @weight, @k1, @k2, @k3, @k4, @l0)",
+                connection);
+
+            command.Parameters.AddWithValue("name", belt.Name);
+            command.Parameters.AddWithValue("weight", belt.Weight);
+            command.Parameters.AddWithValue("k1", belt.K1);
+            command.Parameters.AddWithValue("k2", belt.K2);
+            command.Parameters.AddWithValue("k3", belt.K3);
+            command.Parameters.AddWithValue("k4", belt.K4);
+            command.Parameters.AddWithValue("l0", belt.L0);
+
+            await command.ExecuteNonQueryAsync();
+        }
+
+        public async Task<bool> DeleteBeltAsync(int beltId)
+        {
+            using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            using var cmd = new NpgsqlCommand("DELETE FROM belts WHERE id = @id", connection);
+            cmd.Parameters.AddWithValue("id", beltId);
+
+            var rows = await cmd.ExecuteNonQueryAsync();
+            return rows > 0;
         }
     }
 }

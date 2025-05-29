@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Belt_calculation_Tg_bot.Models
+namespace Belt_calculation_Tg_bot.Models.Base
 {
     internal class BotConfig
     {

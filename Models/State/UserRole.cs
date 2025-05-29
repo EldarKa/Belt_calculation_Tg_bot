@@ -4,9 +4,12 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Belt_calculation_Tg_bot.Models
+namespace Belt_calculation_Tg_bot.Models.State
 {
-    internal class User
+    public enum UserRole
     {
+        Guest,
+        User,
+        Admin
     }
 }

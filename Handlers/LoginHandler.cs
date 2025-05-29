@@ -6,19 +6,22 @@ using System.Threading.Tasks;
 using Belt_calculation_Tg_bot.Data;
 using Belt_calculation_Tg_bot.Handlers.Base;
 using Belt_calculation_Tg_bot.Models;
+using Belt_calculation_Tg_bot.Models.Enums;
+using Belt_calculation_Tg_bot.Models.State;
 using Telegram.Bot;
+using Telegram.Bot.Types;
 
 namespace Belt_calculation_Tg_bot.Handlers
 {
     public class LoginHandler : ICommandHandler
     {
         private readonly Database _database;
-        private readonly Dictionary<long, string> _sessionMap;
+        private readonly Dictionary<long, UserSession> _session;
 
-        public LoginHandler(Database database, Dictionary<long, string> sessionMap)
+        public LoginHandler(Database database, Dictionary<long, UserSession> session)
         {
             _database = database;
-            _sessionMap = sessionMap;
+            _session = session;
         }
 
         public bool CanHandle(UserState state, string message)
@@ -33,7 +36,7 @@ namespace Belt_calculation_Tg_bot.Handlers
                 var username = message;
                 if (await _database.AuthenticateUserAsync(username))
                 {
-                    _sessionMap[chatId] = username;
+                    _session[chatId].Username = username;
                     await bot.SendMessage(chatId, $"Вход выполнен, {username}", cancellationToken: cancellationToken);
                 }
                 else
@@ -49,5 +52,12 @@ namespace Belt_calculation_Tg_bot.Handlers
                 await bot.SendMessage(chatId, "Введите ваш логин:", cancellationToken: cancellationToken);
             }
         }
+
+        public Task<bool> TryHandleCallbackQueryAsync(ITelegramBotClient bot, CallbackQuery callback, UserState userState, CancellationToken token)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IEnumerable<UserRole> AllowedRoles => new[] { UserRole.Guest };
     }
 }
