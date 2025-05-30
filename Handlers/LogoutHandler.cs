@@ -28,16 +28,25 @@ namespace Belt_calculation_Tg_bot.Handlers
 
         public async Task HandleAsync(ITelegramBotClient bot, long chatId, string message, UserState state, CancellationToken cancellationToken)
         {
+            var lang = _session.TryGetValue(chatId, out var session)
+                ? session.Language
+                : "RU";
+
+            async Task<string> SendTranslated(string original)
+            {
+                return await DeepL.Translate(original, lang);
+            }
+
             if (_session.ContainsKey(chatId))
             {
                 _session.Remove(chatId);
-                await bot.SendMessage(chatId, "Вы вышли из аккаунта.", cancellationToken: cancellationToken);
+                await bot.SendMessage(chatId, await SendTranslated("Вы вышли из аккаунта."), cancellationToken: cancellationToken);
                 var menu = KeyboardHelper.GetMenuForRole(UserRole.Guest);
-                await bot.SendMessage(chatId, "Меню обновлено", replyMarkup: menu, cancellationToken: cancellationToken);
+                await bot.SendMessage(chatId, await SendTranslated("Меню обновлено"), replyMarkup: menu, cancellationToken: cancellationToken);
             }
             else
             {
-                await bot.SendMessage(chatId, "Вы не авторизованы.", cancellationToken: cancellationToken);
+                await bot.SendMessage(chatId, await SendTranslated("Вы не авторизованы."), cancellationToken: cancellationToken);
             }
         }
 

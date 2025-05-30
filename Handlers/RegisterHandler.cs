@@ -33,11 +33,19 @@ namespace Belt_calculation_Tg_bot.Handlers
 
         public async Task HandleAsync(ITelegramBotClient bot, long chatId, string message, UserState state, CancellationToken cancellationToken)
         {
+            var lang = _session.TryGetValue(chatId, out var session)
+                ? session.Language
+                : "RU";
+
+            async Task<string> SendTranslated(string original)
+            {
+                return await DeepL.Translate(original, lang);
+            }
             if (state.State == AuthState.AwaitingRegisterUsername)
             {
                 if (await _database.UserExistsAsync(message))
                 {
-                    await bot.SendMessage(chatId, "Пользователь с таким логином уже существует. Попробуйте снова: /register", cancellationToken: cancellationToken);
+                    await bot.SendMessage(chatId, await SendTranslated("Пользователь с таким логином уже существует. Попробуйте снова:") + "/register", cancellationToken: cancellationToken);
                 }
                 else
                 {
@@ -45,22 +53,22 @@ namespace Belt_calculation_Tg_bot.Handlers
 
                     if (!success)
                     {
-                        await bot.SendMessage(chatId, "Ошибка при регистрации. Повторите попытку позже.", cancellationToken: cancellationToken);
+                        await bot.SendMessage(chatId, await SendTranslated("Ошибка при регистрации. Повторите попытку позже."), cancellationToken: cancellationToken);
                         state.State = AuthState.None;
                         return;
                     }
                     _session[chatId].Username = message;
                     _session[chatId].Role = UserRole.User;
-                    await bot.SendMessage(chatId, $"Регистрация успешна! Добро пожаловать, {message}", cancellationToken: cancellationToken);
+                    await bot.SendMessage(chatId, $"{await SendTranslated("Регистрация успешна! Добро пожаловать")}, {message}", cancellationToken: cancellationToken);
                     var menu = KeyboardHelper.GetMenuForRole(_session[chatId].Role);
-                    await bot.SendMessage(chatId, "Меню обновлено", replyMarkup: menu, cancellationToken: cancellationToken);
+                    await bot.SendMessage(chatId, await SendTranslated("Меню обновлено"), replyMarkup: menu, cancellationToken: cancellationToken);
                 }
                 state.State = AuthState.None;
             }
             else // message == /register
             {
                 state.State = AuthState.AwaitingRegisterUsername;
-                await bot.SendMessage(chatId, "Введите логин для регистрации:", cancellationToken: cancellationToken);
+                await bot.SendMessage(chatId, await SendTranslated("Введите логин для регистрации:"), cancellationToken: cancellationToken);
             }
         }
 

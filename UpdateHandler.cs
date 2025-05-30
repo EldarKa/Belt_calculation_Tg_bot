@@ -41,8 +41,8 @@ namespace Belt_calculation_Tg_bot
                 new RegisterHandler(db, _session),
                 new LoginHandler(db, _session),
                 new CalculateHandler(db, _session),
-                new AddBeltHandler(db),
-                new DeleteBeltHandler(db),
+                new AddBeltHandler(db, _session),
+                new DeleteBeltHandler(db, _session),
                 new LogoutHandler(_session),
                 new LangueHandler(_session)
             };
@@ -82,9 +82,20 @@ namespace Belt_calculation_Tg_bot
                 if (!handled)
                 {
                     var isAuth = _session.TryGetValue(chatId, out var userSession);
-                    var reply = isAuth && !string.IsNullOrEmpty(userSession?.Username)
-                        ? $"Принято сообщение от {userSession.Username}"
-                        : "Вы не авторизованы. Введите /login или /register";
+                    var lang = userSession?.Language;
+                    string translated;
+
+                    string reply;
+                    if (isAuth && !string.IsNullOrEmpty(userSession?.Username))
+                    {
+                        translated = await DeepL.Translate("Принято сообщение от", lang);
+                        reply = $"{translated} {userSession.Username}";
+                    }
+                    else
+                    {
+                        translated = await DeepL.Translate("Вы не авторизованы. Введите", lang);
+                        reply = $"{translated} /login, /register";
+                    }
 
                     var menu = KeyboardHelper.GetMenuForRole(role);
 
@@ -100,9 +111,13 @@ namespace Belt_calculation_Tg_bot
                 var data = callback.Data;
 
                 if (!_session.ContainsKey(chatId))
-                    _session[chatId].State = new UserState();
+                    _session[chatId] = new UserSession();
 
                 var state = _session[chatId].State;
+
+                var langueHandler = _handlers.OfType<LangueHandler>().FirstOrDefault();
+                if (langueHandler != null && await langueHandler.TryHandleCallbackQueryAsync(botClient, callback, state, cancellationToken))
+                    return;
 
                 if (data != null && data.StartsWith("belt:"))
                 {
@@ -113,24 +128,6 @@ namespace Belt_calculation_Tg_bot
                         return;
                     }
                 }
-                else if (data.StartsWith("lang_"))
-                {
-                    string langCode = data.Replace("lang_", "");
-
-                    if (!_session.ContainsKey(chatId))
-                        _session[chatId] = new UserSession();
-
-                    _session[chatId].PreferredLanguage = langCode;
-
-                    await botClient.SendMessage(
-                        chatId: chatId,
-                        text: $"Выбран язык: {langCode.ToUpper()}",
-                        cancellationToken: cancellationToken
-                    );
-
-                    await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
-                    return;
-                }
 
                 await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
             }
@@ -140,7 +137,7 @@ namespace Belt_calculation_Tg_bot
 
         public Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, HandleErrorSource source, CancellationToken cancellationToken)
         {
-            Console.WriteLine($"Ошибка: {exception.Message}");
+            Console.WriteLine($"Error: {exception.Message}");
             return Task.CompletedTask;
         }
     }

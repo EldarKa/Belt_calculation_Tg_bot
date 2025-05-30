@@ -14,11 +14,13 @@ namespace Belt_calculation_Tg_bot.Handlers
 {
     public class DeleteBeltHandler : ICommandHandler
     {
-        private readonly Database _database;
 
-        public DeleteBeltHandler(Database database)
+        private readonly Database _database;
+        private readonly Dictionary<long, UserSession> _session;
+        public DeleteBeltHandler(Database database, Dictionary<long, UserSession> session)
         {
             _database = database;
+            _session = session;
         }
 
         public bool CanHandle(UserState state, string message)
@@ -28,6 +30,15 @@ namespace Belt_calculation_Tg_bot.Handlers
 
         public async Task HandleAsync(ITelegramBotClient bot, long chatId, string message, UserState state, CancellationToken cancellationToken)
         {
+            var lang = _session.TryGetValue(chatId, out var session)
+                ? session.Language
+                : "RU";
+
+            async Task<string> SendTranslated(string original)
+            {
+                return await DeepL.Translate(original, lang);
+            }
+
             if (state.DeleteBeltState != DeleteBeltState.AwaitingId)
             {
                 var belts = await _database.GetAllBeltsAsync();
@@ -38,10 +49,11 @@ namespace Belt_calculation_Tg_bot.Handlers
                 }
 
                 var list = string.Join("\n", belts.Select(b => $"{b.Id}: {b.Name}"));
-                await bot.SendMessage(chatId, $"Список ремней:\n{list}\nВведите ID ремня для удаления:", cancellationToken: cancellationToken);
+                await bot.SendMessage(chatId, $"{await SendTranslated("Список ремней:")}\n{list}\n{await SendTranslated("Введите ID ремня для удаления:")}", cancellationToken: cancellationToken);
 
                 state.DeleteBeltState = DeleteBeltState.AwaitingId;
                 return;
+                
             }
 
             if (int.TryParse(message, out int beltId))
@@ -49,17 +61,17 @@ namespace Belt_calculation_Tg_bot.Handlers
                 var success = await _database.DeleteBeltAsync(beltId);
                 if (success)
                 {
-                    await bot.SendMessage(chatId, $"✅ Ремень с ID {beltId} успешно удалён.", cancellationToken: cancellationToken);
+                    await bot.SendMessage(chatId, $"✅ {await SendTranslated("Ремень с")} ID {beltId} {await SendTranslated("успешно удалён.")}", cancellationToken: cancellationToken);
                 }
                 else
                 {
-                    await bot.SendMessage(chatId, $"⚠️ Ремень с ID {beltId} не найден.", cancellationToken: cancellationToken);
+                    await bot.SendMessage(chatId, $"⚠️ {await SendTranslated("Ремень с")} ID {beltId} {await SendTranslated("не найден.")}", cancellationToken: cancellationToken);
                 }
                 state.DeleteBeltState = DeleteBeltState.None;
             }
             else
             {
-                await bot.SendMessage(chatId, "❌ Пожалуйста, введите корректный числовой ID ремня.", cancellationToken: cancellationToken);
+                await bot.SendMessage(chatId, $"❌ {await SendTranslated("Пожалуйста, введите корректный числовой ID ремня.")}", cancellationToken: cancellationToken);
             }
         }
 

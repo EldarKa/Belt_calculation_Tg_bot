@@ -8,19 +8,20 @@ using Belt_calculation_Tg_bot.Models.Base;
 
 namespace Belt_calculation_Tg_bot.Models
 {
-    public static class DeepLTranslator
+    public static class DeepL
     {
-        public static async Task<string> TranslateTextAsync(string text, string targetLang)
+        public static async Task<string> Translate(string text, string targetLang)
         {
             using var httpClient = new HttpClient();
             var request = new HttpRequestMessage(HttpMethod.Post, BotConfig.DeepLApiUrl);
 
             var content = new FormUrlEncodedContent(new[]
-            {
-            new KeyValuePair<string, string>("auth_key", BotConfig.DeepLApiKey),
-            new KeyValuePair<string, string>("text", text),
-            new KeyValuePair<string, string>("target_lang", targetLang.ToUpper())
-        });
+                {
+                    new KeyValuePair<string, string>("auth_key", BotConfig.DeepLApiKey),
+                    new KeyValuePair<string, string>("text", text),
+                    new KeyValuePair<string, string>("target_lang", targetLang.ToUpper())
+                }
+            );
 
             request.Content = content;
 

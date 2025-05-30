@@ -31,6 +31,15 @@ namespace Belt_calculation_Tg_bot.Handlers
 
         public async Task HandleAsync(ITelegramBotClient bot, long chatId, string message, UserState userState, CancellationToken cancellationToken)
         {
+            var lang = _session.TryGetValue(chatId, out var session)
+                ? session.Language
+                : "RU";
+
+            async Task<string> SendTranslated(string original)
+            {
+                return await DeepL.Translate(original, lang);
+            }
+
             if (userState.CalculateState == CalculateState.None)
             {
                 var belts = await _database.GetAllBeltsAsync();
@@ -39,7 +48,7 @@ namespace Belt_calculation_Tg_bot.Handlers
                 }).ToList();
                 await bot.SendMessage(
                     chatId: chatId,
-                    text: "Выберите ремень:",
+                    text: await SendTranslated("Выберите ремень:"),
                     replyMarkup: new InlineKeyboardMarkup(buttons),
                     cancellationToken: cancellationToken
                 );
@@ -48,13 +57,13 @@ namespace Belt_calculation_Tg_bot.Handlers
             }
             if (userState.CalculateState == CalculateState.AwaitingBeltChoice)
             {
-                await bot.SendMessage(chatId, "Сначала выберите ремень, нажав на кнопку выше.", cancellationToken: cancellationToken);
+                await bot.SendMessage(chatId, await SendTranslated("Сначала выберите ремень, нажав на кнопку выше."), cancellationToken: cancellationToken);
                 return;
             }
 
             if (!_session.ContainsKey(chatId))
             {
-                await bot.SendMessage(chatId, "Произошла ошибка: расчёт не инициализирован. Введите /calculate заново.", cancellationToken: cancellationToken);
+                await bot.SendMessage(chatId, await SendTranslated("Произошла ошибка: расчёт не инициализирован. Введите /calculate заново."), cancellationToken: cancellationToken);
                 return;
             }
 
@@ -64,28 +73,28 @@ namespace Belt_calculation_Tg_bot.Handlers
             {
                 case CalculateState.AwaitingD1:
                     await HandleNumericInputAsync(bot, chatId, message, cancellationToken,
-                        "Введите диаметр ведомого шкива D2:",
+                        await SendTranslated("Введите диаметр ведомого шкива D2:"),
                         CalculateState.AwaitingD2,
                         (s, val) => s.Calculation.D1 = val);
                     break;
 
                 case CalculateState.AwaitingD2:
                     await HandleNumericInputAsync(bot, chatId, message, cancellationToken,
-                        "Введите межосевое расстояние L:",
+                        await SendTranslated("Введите межосевое расстояние L:"),
                         CalculateState.AwaitingL,
                         (s, val) => s.Calculation.D2 = val);
                     break;
 
                 case CalculateState.AwaitingL:
                     await HandleNumericInputAsync(bot, chatId, message, cancellationToken,
-                        "Введите передаваемую мощность P:",
+                        await SendTranslated("Введите передаваемую мощность P:"),
                         CalculateState.AwaitingP,
                         (s, val) => s.Calculation.L = val);
                     break;
 
                 case CalculateState.AwaitingP:
                     await HandleNumericInputAsync(bot, chatId, message, cancellationToken,
-                        "Введите частоту вращения ведущего шкива:",
+                        await SendTranslated(await SendTranslated("Введите частоту вращения ведущего шкива:")),
                         CalculateState.AwaitingN,
                         (s, val) => s.Calculation.P = val);
                     break;
@@ -103,12 +112,12 @@ namespace Belt_calculation_Tg_bot.Handlers
                         double Pnom = b.K4 * calcContour.N;
 
                         await bot.SendMessage(chatId,
-                            $"Результаты расчёта:\n" +
-                            $"Общая длина ремня Lb: {Lb:F2}\n" +
-                            $"Сила в ветви F1: {F1:F2}\n" +
-                            $"Сила в ветви F2: {F2:F2}\n" +
-                            $"Рекомендуемая сила натяжения F0: {F0:F2}\n" +
-                            $"Номинальная мощность: {Pnom:F2}",
+                            $"{await SendTranslated("Результаты расчёта:")}\n" +
+                            $"{await SendTranslated("Общая длина ремня Lb:")} {Lb:F2}\n" +
+                            $"{await SendTranslated("Сила в ветви F1:")} {F1:F2}\n" +
+                            $"{await SendTranslated("Сила в ветви F2:")} {F2:F2}\n" +
+                            $"{await SendTranslated("Рекомендуемая сила натяжения F0:")} {F0:F2}\n" +
+                            $"{await SendTranslated("Номинальная мощность:")} {Pnom:F2}",
                             cancellationToken: cancellationToken);
 
                         userState.CalculateState = CalculateState.None;
@@ -159,18 +168,22 @@ namespace Belt_calculation_Tg_bot.Handlers
             CalculateState nextState,
             Action<UserSession, double> applyValue)
         {
+            var lang = _session.TryGetValue(chatId, out var session)
+            ? session.Language
+            : "RU";
             if (double.TryParse(message, out double value))
             {
-                var session = _session[chatId];
                 applyValue(session, value);
                 session.State.CalculateState = nextState;
 
-                await bot.SendMessage(chatId, prompt, cancellationToken: cancellationToken);
+                var translated = await DeepL.Translate(prompt, lang);
+                await bot.SendMessage(chatId, translated, cancellationToken: cancellationToken);
                 return true;
             }
             else
             {
-                await bot.SendMessage(chatId, "Введите число. Пример: 123.45", cancellationToken: cancellationToken);
+                var error = await DeepL.Translate("Введите число. Пример: 123.45", lang);
+                await bot.SendMessage(chatId, error, cancellationToken: cancellationToken);
                 return false;
             }
         }

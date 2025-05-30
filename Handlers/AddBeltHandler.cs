@@ -16,10 +16,12 @@ namespace Belt_calculation_Tg_bot.Handlers
     public class AddBeltHandler : ICommandHandler
     {
         private readonly Database _database;
+        private readonly Dictionary<long, UserSession> _session;
 
-        public AddBeltHandler(Database database)
+        public AddBeltHandler(Database database, Dictionary<long, UserSession> session)
         {
             _database = database;
+            _session = session;
         }
         public bool CanHandle(UserState state, string message)
         {
@@ -28,18 +30,25 @@ namespace Belt_calculation_Tg_bot.Handlers
 
         public async Task HandleAsync(ITelegramBotClient bot, long chatId, string message, UserState state, CancellationToken cancellationToken)
         {
+            var lang = (_session.TryGetValue(chatId, out var session)) ? session.Language : "EN";
+            async Task SendTranslated(string original)
+            {
+                var translated = await DeepL.Translate(original, lang);
+                await bot.SendMessage(chatId, translated, cancellationToken: cancellationToken);
+            }
+
             switch (state.AddBeltState)
             {
                 case AddBeltState.None:
                     state.TempBelt = new Belt();
                     state.AddBeltState = AddBeltState.AwaitingName;
-                    await bot.SendMessage(chatId, "Введите название ремня:", cancellationToken: cancellationToken);
+                    await SendTranslated("Введите название ремня:");
                     break;
 
                 case AddBeltState.AwaitingName:
                     state.TempBelt.Name = message;
                     state.AddBeltState = AddBeltState.AwaitingWeight;
-                    await bot.SendMessage(chatId, "Введите вес ремня (число):", cancellationToken: cancellationToken);
+                    await SendTranslated("Введите вес ремня (Кг):");
                     break;
 
                 case AddBeltState.AwaitingWeight:
@@ -47,9 +56,9 @@ namespace Belt_calculation_Tg_bot.Handlers
                     {
                         state.TempBelt.Weight = weight;
                         state.AddBeltState = AddBeltState.AwaitingK1;
-                        await bot.SendMessage(chatId, "Введите коэффициент K1:", cancellationToken: cancellationToken);
+                        await SendTranslated("Введите коэффициент K1:");
                     }
-                    else await InvalidNumber(bot, chatId, cancellationToken);
+                    else await InvalidNumber(bot, chatId, lang, cancellationToken);
                     break;
 
                 case AddBeltState.AwaitingK1:
@@ -57,9 +66,9 @@ namespace Belt_calculation_Tg_bot.Handlers
                     {
                         state.TempBelt.K1 = k1;
                         state.AddBeltState = AddBeltState.AwaitingK2;
-                        await bot.SendMessage(chatId, "Введите коэффициент K2:", cancellationToken: cancellationToken);
+                        await SendTranslated("Введите коэффициент K2:");
                     }
-                    else await InvalidNumber(bot, chatId, cancellationToken);
+                    else await InvalidNumber(bot, chatId, lang, cancellationToken);
                     break;
 
                 case AddBeltState.AwaitingK2:
@@ -67,9 +76,9 @@ namespace Belt_calculation_Tg_bot.Handlers
                     {
                         state.TempBelt.K2 = k2;
                         state.AddBeltState = AddBeltState.AwaitingK3;
-                        await bot.SendMessage(chatId, "Введите коэффициент K3:", cancellationToken: cancellationToken);
+                        await SendTranslated("Введите коэффициент K3:");
                     }
-                    else await InvalidNumber(bot, chatId, cancellationToken);
+                    else await InvalidNumber(bot, chatId, lang, cancellationToken); ;
                     break;
 
                 case AddBeltState.AwaitingK3:
@@ -77,9 +86,9 @@ namespace Belt_calculation_Tg_bot.Handlers
                     {
                         state.TempBelt.K3 = k3;
                         state.AddBeltState = AddBeltState.AwaitingK4;
-                        await bot.SendMessage(chatId, "Введите коэффициент K4:", cancellationToken: cancellationToken);
+                        await SendTranslated("Введите коэффициент K4:");
                     }
-                    else await InvalidNumber(bot, chatId, cancellationToken);
+                    else await InvalidNumber(bot, chatId, lang, cancellationToken);
                     break;
 
                 case AddBeltState.AwaitingK4:
@@ -87,9 +96,9 @@ namespace Belt_calculation_Tg_bot.Handlers
                     {
                         state.TempBelt.K4 = k4;
                         state.AddBeltState = AddBeltState.AwaitingL0;
-                        await bot.SendMessage(chatId, "Введите длину ремня L0:", cancellationToken: cancellationToken);
+                        await SendTranslated("Введите длину ремня L0:");
                     }
-                    else await InvalidNumber(bot, chatId, cancellationToken);
+                    else await InvalidNumber(bot, chatId, lang, cancellationToken);
                     break;
 
                 case AddBeltState.AwaitingL0:
@@ -98,12 +107,13 @@ namespace Belt_calculation_Tg_bot.Handlers
                         state.TempBelt.L0 = l0;
 
                         await _database.AddBeltAsync(state.TempBelt);
-                        await bot.SendMessage(chatId, $"Ремень \"{state.TempBelt.Name}\" добавлен в базу!", cancellationToken: cancellationToken);
+                        var confirmation = await DeepL.Translate($"Ремень \"{state.TempBelt.Name}\" добавлен в базу!", lang);
+                        await bot.SendMessage(chatId, confirmation, cancellationToken: cancellationToken);
 
                         state.TempBelt = new Belt();
                         state.AddBeltState = AddBeltState.None;
                     }
-                    else await InvalidNumber(bot, chatId, cancellationToken);
+                    else await InvalidNumber(bot, chatId, lang, cancellationToken);
                     break;
             }
         }
@@ -116,8 +126,13 @@ namespace Belt_calculation_Tg_bot.Handlers
         private static bool TryParseDouble(string input, out double value)
             => double.TryParse(input.Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out value);
 
-        private static async Task InvalidNumber(ITelegramBotClient bot, long chatId, CancellationToken ct)
-            => await bot.SendMessage(chatId, "Некорректное число. Попробуйте ещё раз.", cancellationToken: ct);
+        private static async Task InvalidNumber(ITelegramBotClient bot, long chatId, string lang, CancellationToken ct)
+        {
+            var text = await DeepL.Translate("Некорректное число. Попробуйте ещё раз.", lang);
+            await bot.SendMessage(chatId, text, cancellationToken: ct);
+        }
+
+
 
         public IEnumerable<UserRole> AllowedRoles => new[] { UserRole.Admin };
     }

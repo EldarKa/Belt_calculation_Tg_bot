@@ -34,16 +34,23 @@ namespace Belt_calculation_Tg_bot.Handlers
 
         public async Task<bool> TryHandleCallbackQueryAsync(ITelegramBotClient bot, CallbackQuery callback, UserState state, CancellationToken token)
         {
+
             var chatId = callback.Message.Chat.Id;
             var data = callback.Data;
+            var lang = _session.TryGetValue(chatId, out var session)
+                ? session.Language
+                : "RU";
+
+
 
             if (data != null && data.StartsWith("lang_"))
             {
                 var langCode = data.Replace("lang_", "");
-                _session[chatId].PreferredLanguage = langCode;
+                _session[chatId].Language = langCode;
+                string text = await DeepL.Translate("Выбран язык:", lang);
 
                 await bot.AnswerCallbackQuery(callback.Id, cancellationToken: token);
-                await bot.SendMessage(chatId, $"Выбран язык: {langCode.ToUpper()}", cancellationToken: token);
+                await bot.SendMessage(chatId, $"{text} {langCode.ToUpper()}", cancellationToken: token);
                 return true;
             }
 

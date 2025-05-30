@@ -13,6 +13,6 @@ namespace Belt_calculation_Tg_bot.Models
         public UserState State { get; set; } = new();
         public CalculationContour? Calculation { get; set; }
         public UserRole Role { get; set; } = UserRole.Guest;
-        public string PreferredLanguage { get; set; } = "ru";
+        public string Language { get; set; } = "RU";
     }
 }

@@ -32,6 +32,15 @@ namespace Belt_calculation_Tg_bot.Handlers
 
         public async Task HandleAsync(ITelegramBotClient bot, long chatId, string message, UserState state, CancellationToken cancellationToken)
         {
+            var lang = _session.TryGetValue(chatId, out var session)
+                ? session.Language
+                : "RU";
+
+            async Task<string> SendTranslated(string original)
+            {
+                return await DeepL.Translate(original, lang);
+            }
+            
             if (state.State == AuthState.AwaitingLoginUsername)
             {
                 var username = message;
@@ -41,13 +50,13 @@ namespace Belt_calculation_Tg_bot.Handlers
                 {
                     _session[chatId].Username = username;
                     _session[chatId].Role = role.Value;
-                    await bot.SendMessage(chatId, $"Вход выполнен как {username} (роль: {role})", cancellationToken: cancellationToken);
+                    await bot.SendMessage(chatId, $"{await SendTranslated("Вход выполнен как")} {username} ({await SendTranslated("роль:")} {role})", cancellationToken: cancellationToken);
                     var menu = KeyboardHelper.GetMenuForRole(role.Value);
-                    await bot.SendMessage(chatId, "Меню обновлено", replyMarkup: menu, cancellationToken: cancellationToken);
+                    await bot.SendMessage(chatId, $"{ await SendTranslated("Меню обновлено")}", replyMarkup: menu, cancellationToken: cancellationToken);
                 }
                 else
                 {
-                    await bot.SendMessage(chatId, "Логин не найден. Сначала зарегистрируйтесь: /register", cancellationToken: cancellationToken);
+                    await bot.SendMessage(chatId, $"{await SendTranslated("Логин не найден. Сначала зарегистрируйтесь:")} /register", cancellationToken: cancellationToken);
                 }
 
                 state.State = AuthState.None;
@@ -55,7 +64,7 @@ namespace Belt_calculation_Tg_bot.Handlers
             else // message == /login
             {
                 state.State = AuthState.AwaitingLoginUsername;
-                await bot.SendMessage(chatId, "Введите ваш логин:", cancellationToken: cancellationToken);
+                await bot.SendMessage(chatId, $"{await SendTranslated("Введите ваш логин:")}", cancellationToken: cancellationToken);
             }
         }
 
