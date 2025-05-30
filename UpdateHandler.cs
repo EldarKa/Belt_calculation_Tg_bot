@@ -43,7 +43,8 @@ namespace Belt_calculation_Tg_bot
                 new CalculateHandler(db, _session),
                 new AddBeltHandler(db),
                 new DeleteBeltHandler(db),
-                new LogoutHandler(_session)
+                new LogoutHandler(_session),
+                new LangueHandler(_session)
             };
         }
 
@@ -111,6 +112,24 @@ namespace Belt_calculation_Tg_bot
                         await calcHandler.TryHandleCallbackQueryAsync(botClient, callback, state, cancellationToken);
                         return;
                     }
+                }
+                else if (data.StartsWith("lang_"))
+                {
+                    string langCode = data.Replace("lang_", "");
+
+                    if (!_session.ContainsKey(chatId))
+                        _session[chatId] = new UserSession();
+
+                    _session[chatId].PreferredLanguage = langCode;
+
+                    await botClient.SendMessage(
+                        chatId: chatId,
+                        text: $"Выбран язык: {langCode.ToUpper()}",
+                        cancellationToken: cancellationToken
+                    );
+
+                    await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+                    return;
                 }
 
                 await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);

@@ -36,15 +36,15 @@ public static class KeyboardHelper
         {
             UserRole.Guest => new List<KeyboardButton[]>
                 {
-                    new KeyboardButton[] { "/login", "/register" }
+                    new KeyboardButton[] { "/login", "/register", "/langue" }
                 },
             UserRole.User => new List<KeyboardButton[]>
                 {
-                    new KeyboardButton[] { "/calculate", "/logout" }
+                    new KeyboardButton[] { "/calculate", "/logout", "/langue" }
                 },
             UserRole.Admin => new List<KeyboardButton[]>
                 {
-                    new KeyboardButton[] { "/calculate", "/logout" },
+                    new KeyboardButton[] { "/calculate", "/logout", "/langue" },
                     new KeyboardButton[] { "/add_Belt", "/delete_Belt" }
                 },
             _ => new List<KeyboardButton[]>()

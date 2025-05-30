@@ -65,5 +65,6 @@ namespace Belt_calculation_Tg_bot.Handlers
         }
 
         public IEnumerable<UserRole> AllowedRoles => new[] { UserRole.Guest };
+
     }
 }
