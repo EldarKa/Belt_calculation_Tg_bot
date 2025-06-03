@@ -49,87 +49,100 @@ namespace Belt_calculation_Tg_bot
 
         public async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
         {
-            if (update.Type == UpdateType.Message && update.Message?.Text != null)
+            try
             {
-                var message = update.Message;
-                var text = message.Text.Trim();
-                var chatId = message.Chat.Id;
-
-                OnHandleUpdateStarted?.Invoke(text);
-
-                if (!_session.ContainsKey(chatId))
-                    _session[chatId] = new UserSession();
-
-                var state = _session[chatId].State;
-                var role = _session[chatId].Role;
-                var handled = false;
-
-                var availableHandlers = _handlers
-                    .Where(h => h.AllowedRoles.Contains(role))
-                    .ToList();
-
-                foreach (var handler in availableHandlers)
+                switch (update.Type)
                 {
-                    if (handler.CanHandle(state, text))
-                    {
-                        await handler.HandleAsync(botClient, chatId, text, state, cancellationToken);
-                        handled = true;
+                    case UpdateType.Message when update.Message?.Text != null:
+                        await HandleMessageAsync(botClient, update.Message, cancellationToken);
                         break;
-                    }
+                    case UpdateType.CallbackQuery:
+                        await HandleCallbackQueryAsync(botClient, update.CallbackQuery!, cancellationToken);
+                        break;
+                    default:
+                        // Можно добавить логирование неподдерживаемых типов обновлений
+                        break;
                 }
-
-                if (!handled)
-                {
-                    var isAuth = _session.TryGetValue(chatId, out var userSession);
-                    var lang = userSession?.Language;
-                    string translated;
-
-                    string reply;
-                    if (isAuth && !string.IsNullOrEmpty(userSession?.Username))
-                    {
-                        translated = await DeepL.Translate("Принято сообщение от", lang);
-                        reply = $"{translated} {userSession.Username}";
-                    }
-                    else
-                    {
-                        translated = await DeepL.Translate("Вы не авторизованы. Введите", lang);
-                        reply = $"{translated} /login, /register";
-                    }
-
-                    var menu = KeyboardHelper.GetMenuForRole(role);
-
-                    await botClient.SendMessage(chatId: chatId, text: reply, replyMarkup: menu, cancellationToken: cancellationToken);
-                }
-
-                OnHandleUpdateCompleted?.Invoke(text);
             }
-            else if (update.Type == UpdateType.CallbackQuery)
+            catch (Exception ex)
             {
-                var callback = update.CallbackQuery!;
-                var chatId = callback.Message!.Chat.Id;
-                var data = callback.Data;
+                Console.WriteLine($"Ошибка при обработке обновления: {ex}");
+                // Можно добавить отправку сообщения админу или логирование в файл
+            }
+        }
 
-                if (!_session.ContainsKey(chatId))
-                    _session[chatId] = new UserSession();
+        private async Task HandleMessageAsync(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
+        {
+            var text = message.Text!.Trim();
+            var chatId = message.Chat.Id;
 
-                var state = _session[chatId].State;
+            OnHandleUpdateStarted?.Invoke(text);
 
-                var langueHandler = _handlers.OfType<LangueHandler>().FirstOrDefault();
-                if (langueHandler != null && await langueHandler.TryHandleCallbackQueryAsync(botClient, callback, state, cancellationToken))
-                    return;
+            var userSession = _session.GetOrAdd(chatId, _ => new UserSession());
+            var state = userSession.State;
+            var role = userSession.Role;
+            var handled = false;
 
-                if (data != null && data.StartsWith("belt:"))
+            var availableHandlers = _handlers
+                .Where(h => h.AllowedRoles.Contains(role))
+                .ToList();
+
+            foreach (var handler in availableHandlers)
+            {
+                if (handler.CanHandle(state, text))
                 {
-                    var calcHandler = _handlers.OfType<CalculateHandler>().FirstOrDefault();
-                    if (calcHandler != null)
-                    {
-                        await calcHandler.TryHandleCallbackQueryAsync(botClient, callback, state, cancellationToken);
-                        return;
-                    }
+                    await handler.HandleAsync(botClient, chatId, text, state, cancellationToken);
+                    handled = true;
+                    break;
+                }
+            }
+
+            if (!handled)
+            {
+                var lang = userSession.Language;
+                string reply;
+                if (!string.IsNullOrEmpty(userSession.Username))
+                {
+                    var translated = await DeepL.Translate("Принято сообщение от", lang);
+                    reply = $"{translated} {userSession.Username}";
+                }
+                else
+                {
+                    var translated = await DeepL.Translate("Вы не авторизованы. Введите", lang);
+                    reply = $"{translated} /login, /register";
                 }
 
-                await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+                var menu = KeyboardHelper.GetMenuForRole(role);
+
+                await botClient.SendMessage(chatId: chatId, text: reply, replyMarkup: menu, cancellationToken: cancellationToken);
             }
+
+            OnHandleUpdateCompleted?.Invoke(text);
+        }
+
+        private async Task HandleCallbackQueryAsync(ITelegramBotClient botClient, CallbackQuery callback, CancellationToken cancellationToken)
+        {
+            var chatId = callback.Message!.Chat.Id;
+            var data = callback.Data;
+
+            var userSession = _session.GetOrAdd(chatId, _ => new UserSession());
+            var state = userSession.State;
+
+            var langueHandler = _handlers.OfType<LangueHandler>().FirstOrDefault();
+            if (langueHandler != null && await langueHandler.TryHandleCallbackQueryAsync(botClient, callback, state, cancellationToken))
+                return;
+
+            if (data != null && data.StartsWith("belt:"))
+            {
+                var calcHandler = _handlers.OfType<CalculateHandler>().FirstOrDefault();
+                if (calcHandler != null)
+                {
+                    await calcHandler.TryHandleCallbackQueryAsync(botClient, callback, state, cancellationToken);
+                    return;
+                }
+            }
+
+            await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
         }
 
 
