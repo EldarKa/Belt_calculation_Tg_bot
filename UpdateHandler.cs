@@ -1,14 +1,18 @@
-﻿using System.Net.Http.Headers;
+﻿using System.Collections.Concurrent;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Belt_calculation_Tg_bot.Data;
+using Belt_calculation_Tg_bot.Handlers;
 using Belt_calculation_Tg_bot.Handlers;
 using Belt_calculation_Tg_bot.Handlers.Base;
 using Belt_calculation_Tg_bot.Models;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
+using Telegram.Bot.Polling;
+using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -18,13 +22,10 @@ using static Telegram.Bot.TelegramBotClient;
 
 namespace Belt_calculation_Tg_bot
 {
-    public delegate void MessageHandler(string message, string? username, long userId);
-
     public class UpdateHandler : IUpdateHandler
     {
         private readonly Database _database;
-        private readonly Dictionary<long, string> _sessionMap = new(); 
-        private readonly Dictionary<long, UserState> _userStates = new(); // telegramId -> state
+        private readonly ConcurrentDictionary<long, UserSession> _session = new(); 
         private readonly List<ICommandHandler> _handlers;
 
         public delegate void MessageHandler(string message);
@@ -36,79 +37,119 @@ namespace Belt_calculation_Tg_bot
             _database = db;
             _handlers = new()
             {
-                new RegisterHandler(db, _sessionMap),
-                new LoginHandler(db, _sessionMap),
-                new CalculateHandler(db),
-                // Добавишь другие обработчики здесь
+                new RegisterHandler(db, _session),
+                new LoginHandler(db, _session),
+                new CalculateHandler(db, _session),
+                new AddBeltHandler(db, _session),
+                new DeleteBeltHandler(db, _session),
+                new LogoutHandler(_session),
+                new LangueHandler(_session)
             };
         }
 
         public async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
         {
-            if (update.Type == UpdateType.Message && update.Message?.Text != null)
+            try
             {
-                var message = update.Message;
-                var text = message.Text.Trim();
-                var chatId = message.Chat.Id;
-
-                OnHandleUpdateStarted?.Invoke(text);
-
-                if (!_userStates.ContainsKey(chatId))
-                    _userStates[chatId] = new UserState();
-
-                var state = _userStates[chatId];
-
-                var handled = false;
-                foreach (var handler in _handlers)
+                switch (update.Type)
                 {
-                    if (handler.CanHandle(state, text))
-                    {
-                        await handler.HandleAsync(botClient, chatId, text, state, cancellationToken);
-                        handled = true;
+                    case UpdateType.Message when update.Message?.Text != null:
+                        await HandleMessageAsync(botClient, update.Message, cancellationToken);
                         break;
-                    }
+                    case UpdateType.CallbackQuery:
+                        await HandleCallbackQueryAsync(botClient, update.CallbackQuery!, cancellationToken);
+                        break;
+                    default:
+                        // Можно добавить логирование неподдерживаемых типов обновлений
+                        break;
                 }
-
-                if (!handled)
-                {
-                    var isAuth = _sessionMap.TryGetValue(chatId, out var username);
-                    var reply = isAuth ? $"Принято сообщение от {username}" : "Вы не авторизованы. Введите /login или /register";
-                    await botClient.SendMessage(chatId: chatId, text: reply, cancellationToken: cancellationToken);
-                }
-
-                OnHandleUpdateCompleted?.Invoke(text);
             }
-            else if (update.Type == UpdateType.CallbackQuery)
+            catch (Exception ex)
             {
-                var callback = update.CallbackQuery!;
-                var chatId = callback.Message!.Chat.Id;
-                var data = callback.Data;
-
-                if (!_userStates.ContainsKey(chatId))
-                    _userStates[chatId] = new UserState();
-
-                var state = _userStates[chatId];
-
-                if (data != null && data.StartsWith("belt:"))
-                {
-                    var beltName = data.Substring("belt:".Length);
-                    var handler = _handlers.OfType<CalculateHandler>().FirstOrDefault();
-                    if (handler != null)
-                    {
-                        await handler.HandleBeltSelectionAsync(botClient, chatId, beltName, state, cancellationToken);
-                        await botClient.MakeRequestAsync(
-    new Telegram.Bot.Requests.AnswerCallbackQueryRequest(callback.Id),
-    cancellationToken
-);
-                    }
-                }
+                Console.WriteLine($"Ошибка при обработке обновления: {ex}");
+                // Можно добавить отправку сообщения админу или логирование в файл
             }
         }
+
+        private async Task HandleMessageAsync(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
+        {
+            var text = message.Text!.Trim();
+            var chatId = message.Chat.Id;
+
+            OnHandleUpdateStarted?.Invoke(text);
+
+            var userSession = _session.GetOrAdd(chatId, _ => new UserSession());
+            var state = userSession.State;
+            var role = userSession.Role;
+            var handled = false;
+
+            var availableHandlers = _handlers
+                .Where(h => h.AllowedRoles.Contains(role))
+                .ToList();
+
+            foreach (var handler in availableHandlers)
+            {
+                if (handler.CanHandle(state, text))
+                {
+                    await handler.HandleAsync(botClient, chatId, text, state, cancellationToken);
+                    handled = true;
+                    break;
+                }
+            }
+
+            if (!handled)
+            {
+                var lang = userSession.Language;
+                string reply;
+                if (!string.IsNullOrEmpty(userSession.Username))
+                {
+                    var translated = await DeepL.Translate("Принято сообщение от", lang);
+                    reply = $"{translated} {userSession.Username}";
+                }
+                else
+                {
+                    var translated = await DeepL.Translate("Вы не авторизованы. Введите", lang);
+                    reply = $"{translated} /login, /register";
+                }
+
+                var menu = KeyboardHelper.GetMenuForRole(role);
+
+                await botClient.SendMessage(chatId: chatId, text: reply, replyMarkup: menu, cancellationToken: cancellationToken);
+            }
+
+            OnHandleUpdateCompleted?.Invoke(text);
+        }
+
+        private async Task HandleCallbackQueryAsync(ITelegramBotClient botClient, CallbackQuery callback, CancellationToken cancellationToken)
+        {
+            var chatId = callback.Message!.Chat.Id;
+            var data = callback.Data;
+
+            var userSession = _session.GetOrAdd(chatId, _ => new UserSession());
+            var state = userSession.State;
+
+            var langueHandler = _handlers.OfType<LangueHandler>().FirstOrDefault();
+            if (langueHandler != null && await langueHandler.TryHandleCallbackQueryAsync(botClient, callback, state, cancellationToken))
+                return;
+
+            if (data != null && data.StartsWith("belt:"))
+            {
+                var calcHandler = _handlers.OfType<CalculateHandler>().FirstOrDefault();
+                if (calcHandler != null)
+                {
+                    await calcHandler.TryHandleCallbackQueryAsync(botClient, callback, state, cancellationToken);
+                    return;
+                }
+            }
+
+            await botClient.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+        }
+
 
 
         public Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, HandleErrorSource source, CancellationToken cancellationToken)
         {
-            Console.WriteLine($"Ошибка: {exception.Message}");
+            Console.WriteLine($"Error: {exception.Message}");
             return Task.CompletedTask;
         }
     }

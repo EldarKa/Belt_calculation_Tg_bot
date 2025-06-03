@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using Belt_calculation_Tg_bot.Data;
 using Belt_calculation_Tg_bot.Handlers.Base;
 using Belt_calculation_Tg_bot.Models;
+using Belt_calculation_Tg_bot.Models.State;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -15,11 +17,12 @@ namespace Belt_calculation_Tg_bot.Handlers
     public class CalculateHandler : ICommandHandler
     {
         private readonly Database _database;
-        private readonly Dictionary<long, CalculationSession> _sessions;
+        private readonly ConcurrentDictionary<long, UserSession> _session;
 
-        public CalculateHandler(Database database)
+        public CalculateHandler(Database database, ConcurrentDictionary<long, UserSession> session)
         {
             _database = database;
+            _session = session;
         }
 
         public bool CanHandle(UserState state, string message)
@@ -29,6 +32,15 @@ namespace Belt_calculation_Tg_bot.Handlers
 
         public async Task HandleAsync(ITelegramBotClient bot, long chatId, string message, UserState userState, CancellationToken cancellationToken)
         {
+            var lang = _session.TryGetValue(chatId, out var session)
+                ? session.Language
+                : "RU";
+
+            async Task<string> SendTranslated(string original)
+            {
+                return await DeepL.Translate(original, lang);
+            }
+
             if (userState.CalculateState == CalculateState.None)
             {
                 var belts = await _database.GetAllBeltsAsync();
@@ -37,108 +49,146 @@ namespace Belt_calculation_Tg_bot.Handlers
                 }).ToList();
                 await bot.SendMessage(
                     chatId: chatId,
-                    text: "Выберите ремень:",
+                    text: await SendTranslated("Выберите ремень:"),
                     replyMarkup: new InlineKeyboardMarkup(buttons),
                     cancellationToken: cancellationToken
                 );
                 userState.CalculateState = CalculateState.AwaitingBeltChoice;
                 return;
             }
+            if (userState.CalculateState == CalculateState.AwaitingBeltChoice)
+            {
+                await bot.SendMessage(chatId, await SendTranslated("Сначала выберите ремень, нажав на кнопку выше."), cancellationToken: cancellationToken);
+                return;
+            }
 
-            var sessionData = _sessions[chatId];
-            switch (sessionData.State)
+            if (!_session.ContainsKey(chatId))
+            {
+                await bot.SendMessage(chatId, await SendTranslated("Произошла ошибка: расчёт не инициализирован. Введите /calculate заново."), cancellationToken: cancellationToken);
+                return;
+            }
+
+            var sessionData = _session[chatId];
+            var calcContour = sessionData.Calculation;
+            switch (sessionData.State.CalculateState)
             {
                 case CalculateState.AwaitingD1:
-                    if (double.TryParse(message, out double d1))
-                    {
-                        sessionData.D1 = d1;
-                        sessionData.State = CalculateState.AwaitingD2;
-                        await bot.SendMessage(chatId, "Введите диаметр ведомого шкива D2:", cancellationToken: cancellationToken);
-                    }
+                    await HandleNumericInputAsync(bot, chatId, message, cancellationToken,
+                        await SendTranslated("Введите диаметр ведомого шкива D2:"),
+                        CalculateState.AwaitingD2,
+                        (s, val) => s.Calculation.D1 = val);
                     break;
 
                 case CalculateState.AwaitingD2:
-                    if (double.TryParse(message, out double d2))
-                    {
-                        sessionData.D2 = d2;
-                        sessionData.State = CalculateState.AwaitingL;
-                        await bot.SendMessage(chatId, "Введите межосевое расстояние L:", cancellationToken: cancellationToken);
-                    }
+                    await HandleNumericInputAsync(bot, chatId, message, cancellationToken,
+                        await SendTranslated("Введите межосевое расстояние L:"),
+                        CalculateState.AwaitingL,
+                        (s, val) => s.Calculation.D2 = val);
                     break;
 
                 case CalculateState.AwaitingL:
-                    if (double.TryParse(message, out double l))
-                    {
-                        sessionData.L = l;
-                        sessionData.State = CalculateState.AwaitingP;
-                        await bot.SendMessage(chatId, "Введите передаваемую мощность P:", cancellationToken: cancellationToken);
-                    }
+                    await HandleNumericInputAsync(bot, chatId, message, cancellationToken,
+                        await SendTranslated("Введите передаваемую мощность P:"),
+                        CalculateState.AwaitingP,
+                        (s, val) => s.Calculation.L = val);
                     break;
 
                 case CalculateState.AwaitingP:
-                    if (double.TryParse(message, out double p))
-                    {
-                        sessionData.P = p;
-                        sessionData.State = CalculateState.AwaitingN;
-                        await bot.SendMessage(chatId, "Введите частоту вращения ведущего шкива:", cancellationToken: cancellationToken);
-                    }
+                    await HandleNumericInputAsync(bot, chatId, message, cancellationToken,
+                        await SendTranslated(await SendTranslated("Введите частоту вращения ведущего шкива:")),
+                        CalculateState.AwaitingN,
+                        (s, val) => s.Calculation.P = val);
                     break;
 
                 case CalculateState.AwaitingN:
                     if (double.TryParse(message, out double n))
                     {
-                        sessionData.N = n;
+                        calcContour.N = n;
 
-                        var b = sessionData.SelectedBelt;
-                        double Lb = 2 * sessionData.L + (Math.PI / 2) * (sessionData.D1 + sessionData.D2) + Math.Pow(sessionData.D2 - sessionData.D1, 2) / (4 * sessionData.L);
-                        double F1 = b.K1 * sessionData.P;
-                        double F2 = b.K2 * sessionData.P;
-                        double F0 = b.K3 * sessionData.P;
-                        double Pnom = b.K4 * sessionData.N;
+                        var b = calcContour.SelectedBelt;
+                        double Lb = 2 * calcContour.L + (Math.PI / 2) * (calcContour.D1 + calcContour.D2) + Math.Pow(calcContour.D2 - calcContour.D1, 2) / (4 * calcContour.L);
+                        double F1 = b.K1 * calcContour.P;
+                        double F2 = b.K2 * calcContour.P;
+                        double F0 = b.K3 * calcContour.P;
+                        double Pnom = b.K4 * calcContour.N;
 
                         await bot.SendMessage(chatId,
-                            $"Результаты расчёта:\n" +
-                            $"Общая длина ремня Lb: {Lb:F2}\n" +
-                            $"Сила в ветви F1: {F1:F2}\n" +
-                            $"Сила в ветви F2: {F2:F2}\n" +
-                            $"Рекомендуемая сила натяжения F0: {F0:F2}\n" +
-                            $"Номинальная мощность: {Pnom:F2}",
+                            $"{await SendTranslated("Результаты расчёта:")}\n" +
+                            $"{await SendTranslated("Общая длина ремня Lb:")} {Lb:F2}\n" +
+                            $"{await SendTranslated("Сила в ветви F1:")} {F1:F2}\n" +
+                            $"{await SendTranslated("Сила в ветви F2:")} {F2:F2}\n" +
+                            $"{await SendTranslated("Рекомендуемая сила натяжения F0:")} {F0:F2}\n" +
+                            $"{await SendTranslated("Номинальная мощность:")} {Pnom:F2}",
                             cancellationToken: cancellationToken);
 
-                        _sessions.Remove(chatId);
+                        userState.CalculateState = CalculateState.None;
+                        userState.SelectedBelt = null;
                     }
                     break;
             }
         }
 
-        public async Task HandleBeltSelectionAsync(
+        public async Task<bool> TryHandleCallbackQueryAsync(
+            ITelegramBotClient bot,
+            CallbackQuery callback,
+            UserState userState,
+            CancellationToken token)
+        {
+            if (callback.Data == null || !callback.Data.StartsWith("belt:"))
+                return false;
+
+            var beltName = callback.Data["belt:".Length..];
+            var belt = await _database.GetBeltByNameAsync(beltName);
+            if (belt == null)
+            {
+                await bot.AnswerCallbackQuery(callback.Id, cancellationToken: token);
+                await bot.SendMessage(callback.Message!.Chat.Id, "Ремень не найден", cancellationToken: token);
+                return true;
+            }
+
+            userState.SelectedBelt = belt;
+            userState.CalculateState = CalculateState.AwaitingD1;
+
+            // 👇 ОБЯЗАТЕЛЬНО: инициализируем CalculationSession
+            _session[callback.Message.Chat.Id].Calculation = new CalculationContour
+            {
+                SelectedBelt = belt
+            };
+
+            await bot.AnswerCallbackQuery(callback.Id, cancellationToken: token);
+            await bot.SendMessage(callback.Message.Chat.Id, "Введите диаметр ведущего шкива D1:", cancellationToken: token);
+            return true;
+        }
+
+        private async Task<bool> HandleNumericInputAsync(
             ITelegramBotClient bot,
             long chatId,
-            string beltName,
-            UserState userState,
-            CancellationToken cancellationToken)
+            string message,
+            CancellationToken cancellationToken,
+            string prompt,
+            CalculateState nextState,
+            Action<UserSession, double> applyValue)
         {
-            var belt = await _database.GetBeltByNameAsync(beltName);
-
-            if (belt != null)
+            var lang = _session.TryGetValue(chatId, out var session)
+            ? session.Language
+            : "RU";
+            if (double.TryParse(message, out double value))
             {
-                userState.SelectedBelt = belt;
-                userState.CalculateState = CalculateState.AwaitingD1;
+                applyValue(session, value);
+                session.State.CalculateState = nextState;
 
-                await bot.SendMessage(
-                    chatId: chatId,
-                    text: "Введите диаметр ведущего шкива D1:",
-                    cancellationToken: cancellationToken
-                );
+                var translated = await DeepL.Translate(prompt, lang);
+                await bot.SendMessage(chatId, translated, cancellationToken: cancellationToken);
+                return true;
             }
             else
             {
-                await bot.SendMessage(
-                    chatId: chatId,
-                    text: "Ремень не найден. Попробуйте снова с /calculate.",
-                    cancellationToken: cancellationToken
-                );
+                var error = await DeepL.Translate("Введите число. Пример: 123.45", lang);
+                await bot.SendMessage(chatId, error, cancellationToken: cancellationToken);
+                return false;
             }
         }
+
+        public IEnumerable<UserRole> AllowedRoles => new[] { UserRole.User, UserRole.Admin };
     }
 }

@@ -1,3 +1,4 @@
+using Belt_calculation_Tg_bot.Models.State;
 using Telegram.Bot;
 using Telegram.Bot.Types.ReplyMarkups;
 
@@ -27,5 +28,28 @@ public static class KeyboardHelper
             replyMarkup: keyboard,
             cancellationToken: cancellationToken
         );
+    }
+
+    public static ReplyKeyboardMarkup GetMenuForRole(UserRole role)
+    {
+        List<KeyboardButton[]> buttons = role switch
+        {
+            UserRole.Guest => new List<KeyboardButton[]>
+                {
+                    new KeyboardButton[] { "/login", "/register", "/langue" }
+                },
+            UserRole.User => new List<KeyboardButton[]>
+                {
+                    new KeyboardButton[] { "/calculate", "/logout", "/langue" }
+                },
+            UserRole.Admin => new List<KeyboardButton[]>
+                {
+                    new KeyboardButton[] { "/calculate", "/logout", "/langue" },
+                    new KeyboardButton[] { "/add_Belt", "/delete_Belt" }
+                },
+            _ => new List<KeyboardButton[]>()
+        };
+
+        return new ReplyKeyboardMarkup(buttons) { ResizeKeyboard = true };
     }
 }
