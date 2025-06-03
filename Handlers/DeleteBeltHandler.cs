@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -16,8 +17,8 @@ namespace Belt_calculation_Tg_bot.Handlers
     {
 
         private readonly Database _database;
-        private readonly Dictionary<long, UserSession> _session;
-        public DeleteBeltHandler(Database database, Dictionary<long, UserSession> session)
+        private readonly ConcurrentDictionary<long, UserSession> _session;
+        public DeleteBeltHandler(Database database, ConcurrentDictionary<long, UserSession> session)
         {
             _database = database;
             _session = session;

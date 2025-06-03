@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -14,9 +15,9 @@ namespace Belt_calculation_Tg_bot.Handlers
 {
     public class LogoutHandler : ICommandHandler
     {
-        private readonly Dictionary<long, UserSession> _session;
+        private readonly ConcurrentDictionary<long, UserSession> _session;
 
-        public LogoutHandler(Dictionary<long, UserSession> session)
+        public LogoutHandler(ConcurrentDictionary<long, UserSession> session)
         {
             _session = session;
         }
@@ -39,7 +40,7 @@ namespace Belt_calculation_Tg_bot.Handlers
 
             if (_session.ContainsKey(chatId))
             {
-                _session.Remove(chatId);
+                _session.Remove(chatId, out var removedSession);
                 await bot.SendMessage(chatId, await SendTranslated("Вы вышли из аккаунта."), cancellationToken: cancellationToken);
                 var menu = KeyboardHelper.GetMenuForRole(UserRole.Guest);
                 await bot.SendMessage(chatId, await SendTranslated("Меню обновлено"), replyMarkup: menu, cancellationToken: cancellationToken);

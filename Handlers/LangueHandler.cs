@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -15,9 +16,9 @@ namespace Belt_calculation_Tg_bot.Handlers
 {
     public class LangueHandler : ICommandHandler
     {
-        private readonly Dictionary<long, UserSession> _session;
+        private readonly ConcurrentDictionary<long, UserSession> _session;
 
-        public LangueHandler(Dictionary<long, UserSession> session)
+        public LangueHandler(ConcurrentDictionary<long, UserSession> session)
         {
             _session = session;
         }

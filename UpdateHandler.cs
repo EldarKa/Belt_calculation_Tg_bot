@@ -1,11 +1,12 @@
-﻿using System.Net.Http.Headers;
+﻿using System.Collections.Concurrent;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Belt_calculation_Tg_bot.Data;
 using Belt_calculation_Tg_bot.Handlers;
-using Belt_calculation_Tg_bot.Handlers.Base;
 using Belt_calculation_Tg_bot.Handlers;
+using Belt_calculation_Tg_bot.Handlers.Base;
 using Belt_calculation_Tg_bot.Models;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
@@ -21,12 +22,10 @@ using static Telegram.Bot.TelegramBotClient;
 
 namespace Belt_calculation_Tg_bot
 {
-    public delegate void MessageHandler(string message, string? username, long userId);
-
     public class UpdateHandler : IUpdateHandler
     {
         private readonly Database _database;
-        private readonly Dictionary<long, UserSession> _session = new(); 
+        private readonly ConcurrentDictionary<long, UserSession> _session = new(); 
         private readonly List<ICommandHandler> _handlers;
 
         public delegate void MessageHandler(string message);
